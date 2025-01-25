@@ -1,1 +1,122 @@
 
+import numpy as np
+import random
+
+
+class Environment:
+    def __init__(self, state=6, actions=4, start=(1, 1), goalstate=(5, 4)):
+        self.state = state  # Grid size (state x state)
+        self.actions = actions  # Number of possible actions
+        self.start = start
+        self.goalstate = goalstate
+        self.obstacle = self.generate_obstacles(num_obstacles=7)
+        
+        # Ensure start and goal positions are not obstacles
+        self.obstacle = [obs for obs in self.obstacle if obs != self.start and obs != self.goalstate]
+
+    def generate_obstacles(self, num_obstacles):
+        obstacles = []
+        while len(obstacles) < num_obstacles:
+            pos = (random.randint(0, self.state - 1), random.randint(0, self.state - 1))
+            if pos not in obstacles:  # Avoid duplicates
+                obstacles.append(pos)
+        return obstacles
+
+    def rewards(self):
+        rewards = -np.ones((self.state, self.state))  # Default reward
+        rewards[self.goalstate] = 10  # High reward for the goal
+        for obs in self.obstacle:
+            rewards[obs] = -10  # Negative reward for obstacles
+        return rewards
+
+    def is_valid_move(self, position):
+        x, y = position
+        return 0 <= x < self.state and 0 <= y < self.state
+
+    def calculate_reward(self, position):
+        if not self.is_valid_move(position):
+            return -5  # Penalty for hitting the boundary
+        
+        if position in self.obstacle:
+            return -10  # Penalty for hitting an obstacle
+        
+        if position == self.goalstate:
+            return 10  # Reward for reaching the goal
+        
+        return -1  # Default reward for valid empty spaces
+
+    def step(self, position, action):
+        """Perform an action and return the next state, reward, and done flag."""
+        x, y = position
+        if action == 0:  # Up
+            next_position = (x - 1, y)
+        elif action == 1:  # Down
+            next_position = (x + 1, y)
+        elif action == 2:  # Right
+            next_position = (x, y + 1)
+        elif action == 3:  # Left
+            next_position = (x, y - 1)
+        else:
+            raise ValueError("Invalid action")
+        
+        reward = self.calculate_reward(next_position)
+        done = next_position == self.goalstate
+        if not self.is_valid_move(next_position):
+            next_position = position  # Remain in the same position if out of bounds
+        return next_position, reward, done
+
+    def render_grid(self):
+        """Visualize the grid with obstacles, start, and goal."""
+        grid = np.full((self.state, self.state), " ", dtype=str)
+        for obs in self.obstacle:
+            grid[obs] = "."
+        grid[self.goalstate] = "$"
+        grid[self.start] = "0"
+        print("\n".join("".join(row) for row in grid))
+
+
+# Q-Learning Implementation
+def q_learning(env, episodes=1000, alpha=0.1, gamma=0.99, epsilon=1.0, epsilon_decay=0.995, epsilon_min=0.1):
+    q_table = np.zeros((env.state, env.state, env.actions))  # Initialize Q-table
+    rewards = []  # Store rewards for each episode
+
+    for episode in range(episodes):
+        state = env.start  # Reset to start position
+        total_reward = 0
+        done = False
+
+        while not done:
+            x, y = state
+            # ε-greedy action selection
+            if random.uniform(0, 1) < epsilon:
+                action = random.randint(0, env.actions - 1)  # Explore
+            else:
+                action = np.argmax(q_table[x, y])  # Exploit
+            
+            # Take action and observe reward and next state
+            next_state, reward, done = env.step(state, action)
+            nx, ny = next_state
+            
+            # Q-learning update rule
+            q_table[x, y, action] = q_table[x, y, action] + alpha * (
+                reward + gamma * np.max(q_table[nx, ny]) - q_table[x, y, action]
+            )
+            
+            state = next_state  # Move to the next state
+            total_reward += reward
+
+        # Decay epsilon
+        epsilon = max(epsilon * epsilon_decay, epsilon_min)
+        rewards.append(total_reward)
+
+    return q_table, rewards
+
+
+# Initialize environment and run Q-learning
+env = Environment()
+env.render_grid()  # Display the initial grid
+q_table, episode_rewards = q_learning(env)
+
+# Output results
+print("\nTraining completed!")
+print(f"Q-table:\n{q_table}")
